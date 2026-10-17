@@ -74,7 +74,7 @@ body{
   outline:1px solid var(--sh); cursor:pointer;
 }
 #face:active{border-color:var(--sh) var(--hi) var(--hi) var(--sh)}
-#face svg{width:28px;height:28px}
+#face svg{width:28px;height:28px;pointer-events:none}
 .say{
   margin:0 4px 6px; padding:6px 8px; font-size:13px; min-height:2.6em;
   background:#ffffe1; border:1px solid #000; display:flex; align-items:center; gap:6px;
@@ -398,7 +398,7 @@ function secondary(i){
 const pad3 = (n) => n < 0 ? "-" + String(Math.min(99, -n)).padStart(2, "0") : String(Math.min(999, n)).padStart(3, "0");
 function updLeft(){ leftEl.textContent = pad3(M - flags); }
 function updTime(){ timeEl.textContent = pad3(secs); }
-function setFace(k){ faceEl.innerHTML = face(k); faceEl.dataset.k = k; }
+function setFace(k){ if (faceEl.dataset.k === k) return; faceEl.innerHTML = face(k); faceEl.dataset.k = k; }
 function say(text, cls){ sayEl.textContent = text; sayEl.className = "say" + (cls ? " " + cls : ""); }
 function updBest(){
   bestEl.textContent = "ベストタイム　" + LEVELS.map((L, k) => L.name + "：" + (best[k] == null ? "—" : best[k] + "秒")).join("　");
