@@ -1,0 +1,853 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data:; connect-src 'none'; base-uri 'none'; form-action 'none'">
+<title>つくってためそ 地雷さがし（Claude版）</title>
+<style>
+:root{
+  --desk:#008080; --face:#c0c0c0; --hi:#ffffff; --sh:#808080; --dk:#000000;
+  --title1:#000080; --title2:#1084d0; --led-bg:#000; --led:#ff2020; --led-ghost:#3a0000;
+  --cell:28px;
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{
+  min-height:100vh; background:var(--desk); color:#000;
+  font-family:"Hiragino Kaku Gothic ProN","Yu Gothic UI","Meiryo",system-ui,sans-serif;
+  display:flex; flex-direction:column; align-items:center; justify-content:flex-start;
+  padding:16px 16px 24px; overflow-x:hidden;
+  -webkit-tap-highlight-color:transparent;
+}
+.win{
+  background:var(--face); max-width:100%;
+  border:2px solid; border-color:var(--hi) var(--dk) var(--dk) var(--hi);
+  box-shadow:inset -1px -1px 0 var(--sh), inset 1px 1px 0 #dfdfdf;
+  padding:3px; user-select:none; -webkit-user-select:none;
+}
+.titlebar{
+  background:linear-gradient(90deg,var(--title1),var(--title2));
+  color:#fff; font-weight:bold; font-size:14px; padding:4px 6px 4px 6px;
+  display:flex; align-items:center; gap:6px; position:relative;
+}
+.titlebar .ico{width:16px;height:16px;flex:none}
+.titlebar .tt{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#px{position:absolute;left:0;top:0;width:2px;height:2px;background:transparent}
+.tbtn{
+  font:inherit; font-size:12px; font-weight:bold; background:var(--face); color:#000;
+  border:2px solid; border-color:var(--hi) var(--dk) var(--dk) var(--hi);
+  padding:1px 8px; cursor:pointer; flex:none;
+}
+.tbtn:active{border-color:var(--dk) var(--hi) var(--hi) var(--dk)}
+.menu{display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:6px 4px 4px;font-size:13px}
+.seg{display:flex}
+.btn{
+  font:inherit; font-size:13px; background:var(--face); color:#000; cursor:pointer;
+  border:2px solid; border-color:var(--hi) var(--dk) var(--dk) var(--hi);
+  box-shadow:inset -1px -1px 0 var(--sh); padding:4px 10px; min-height:32px;
+}
+.btn:active,.btn.on{border-color:var(--dk) var(--hi) var(--hi) var(--dk); box-shadow:inset 1px 1px 0 var(--sh); background:#d4d4d4}
+.btn.on{font-weight:bold}
+.btn:focus-visible{outline:1px dotted #000; outline-offset:-5px}
+.btn.ai{background:#dce6ff}
+.btn.ai.running{background:#ffd6d6}
+.chk{display:flex;align-items:center;gap:4px;cursor:pointer;padding:0 4px}
+.sunken{
+  border:3px solid; border-color:var(--sh) var(--hi) var(--hi) var(--sh);
+}
+.panel{
+  display:flex; align-items:center; justify-content:space-between;
+  padding:5px 6px; margin:4px 4px 6px; gap:8px;
+}
+.led{
+  background:var(--led-bg); color:var(--led); font-family:"Courier New",ui-monospace,monospace;
+  font-weight:bold; font-size:26px; line-height:1; padding:2px 3px; letter-spacing:1px;
+  border:1px solid; border-color:var(--sh) var(--hi) var(--hi) var(--sh); position:relative;
+  min-width:3.4ch; text-align:right; text-shadow:0 0 4px rgba(255,40,40,.6);
+}
+.led::before{content:"888";position:absolute;right:3px;top:2px;color:var(--led-ghost);text-shadow:none;z-index:0}
+.led span{position:relative;z-index:1}
+#face{
+  width:40px;height:40px;font-size:24px;line-height:1;padding:0;display:grid;place-items:center;
+  background:var(--face); border:3px solid; border-color:var(--hi) var(--sh) var(--sh) var(--hi);
+  outline:1px solid var(--sh); cursor:pointer;
+}
+#face:active{border-color:var(--sh) var(--hi) var(--hi) var(--sh)}
+#face svg{width:28px;height:28px}
+.say{
+  margin:0 4px 6px; padding:6px 8px; font-size:13px; min-height:2.6em;
+  background:#ffffe1; border:1px solid #000; display:flex; align-items:center; gap:6px;
+}
+.say.boom{background:#ffe0e0;font-weight:bold}
+.say.win{background:#e0ffe0;font-weight:bold}
+.say.ai{background:#e6efff}
+.boardwrap{margin:0 4px 4px; overflow:auto; max-width:calc(100vw - 32px - 14px)}
+#board{
+  display:grid; width:max-content; touch-action:manipulation;
+}
+.c{
+  width:var(--cell); height:var(--cell); display:grid; place-items:center;
+  font-weight:900; font-size:calc(var(--cell) * .62); line-height:1;
+  background:var(--face);
+  border:calc(var(--cell) / 9) solid; border-color:var(--hi) var(--sh) var(--sh) var(--hi);
+  font-family:"Arial Black","Arial",sans-serif; cursor:default;
+}
+.c.pr,.c.o{border:0; border-right:1px solid var(--sh); border-bottom:1px solid var(--sh); background:#bdbdbd}
+.c.o{background:var(--face)}
+.c svg{width:72%;height:72%;pointer-events:none}
+.c.q::after{content:"?";font-size:calc(var(--cell) * .6)}
+.c.boom{background:#ff0000!important}
+.c.aif{outline:3px solid #2266ff; outline-offset:-3px; z-index:2; position:relative; animation:aif .5s ease-in-out infinite alternate}
+@keyframes aif{to{outline-color:#88bbff}}
+.n1{color:#0000ff}.n2{color:#008000}.n3{color:#ff0000}.n4{color:#000080}
+.n5{color:#800000}.n6{color:#008080}.n7{color:#000}.n8{color:#808080}
+.c.pop{animation:pop .35s ease-out}
+@keyframes pop{0%{transform:scale(.2)}60%{transform:scale(1.5)}100%{transform:scale(1)}}
+.best{font-size:12px;padding:2px 6px 4px;color:#222}
+.note{margin-top:14px;color:#e8ffff;font-size:12px;text-align:center;max-width:560px;line-height:1.6}
+.shake{animation:shake .6s cubic-bezier(.36,.07,.19,.97)}
+@keyframes shake{
+  10%,90%{transform:translate(-3px,1px)} 20%,80%{transform:translate(6px,-4px)}
+  30%,50%,70%{transform:translate(-12px,6px) rotate(-1deg)} 40%,60%{transform:translate(12px,-6px) rotate(1deg)}
+}
+#fx{position:fixed;inset:0;pointer-events:none;z-index:50}
+#flash{position:fixed;inset:0;pointer-events:none;z-index:49;background:#fff;opacity:0}
+#flash.go{animation:flash .7s ease-out}
+@keyframes flash{0%{opacity:.95;background:#fff}25%{opacity:.8;background:#ff5a00}100%{opacity:0;background:#ff0000}}
+#bang{
+  position:fixed;left:50%;top:40%;z-index:51;pointer-events:none;
+  font-size:min(18vw,110px);font-weight:900;color:#ffe600;
+  -webkit-text-stroke:4px #c00000; paint-order:stroke fill;
+  text-shadow:0 0 20px #ff5a00,6px 6px 0 #000;
+  transform:translate(-50%,-50%) scale(0) rotate(-12deg);opacity:0;white-space:nowrap;
+  font-family:"Hiragino Kaku Gothic StdN","Arial Black",sans-serif;
+}
+#bang.go{animation:bang 1.6s cubic-bezier(.2,1.6,.4,1) forwards}
+@keyframes bang{
+  0%{transform:translate(-50%,-50%) scale(0) rotate(-12deg);opacity:1}
+  25%{transform:translate(-50%,-50%) scale(1.25) rotate(-6deg);opacity:1}
+  70%{transform:translate(-50%,-50%) scale(1) rotate(-8deg);opacity:1}
+  100%{transform:translate(-50%,-50%) scale(1.1) rotate(-8deg);opacity:0}
+}
+dialog{
+  max-width:min(520px,calc(100vw - 32px)); padding:0; border:2px solid;
+  border-color:var(--hi) var(--dk) var(--dk) var(--hi); background:var(--face);
+}
+dialog::backdrop{background:rgba(0,0,0,.35)}
+dialog .body{padding:10px 14px;font-size:14px;line-height:1.7}
+dialog .body ul{padding-left:1.2em;margin:.4em 0}
+dialog .foot{text-align:right;padding:0 14px 12px}
+@media (prefers-reduced-motion:reduce){
+  .shake,#flash.go,.c.pop,.c.aif{animation:none}
+}
+@media (max-width:420px){
+  .menu{font-size:12px}
+  .btn{padding:4px 7px;font-size:12px}
+  .led{font-size:22px}
+}
+</style>
+</head>
+<body>
+<div class="win" id="win">
+  <div class="titlebar">
+    <span id="px" aria-hidden="true"></span>
+    <svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="9" r="5" fill="#000"/><rect x="7" y="1" width="2" height="4" fill="#000"/><circle cx="6.5" cy="7.5" r="1.3" fill="#fff"/></svg>
+    <span class="tt">つくってためそ 地雷さがし</span>
+    <button class="tbtn" id="helpBtn" type="button">あそびかた</button>
+  </div>
+
+  <div class="menu">
+    <div class="seg" role="group" aria-label="難易度">
+      <button class="btn lv on" data-lv="0" type="button">初級</button>
+      <button class="btn lv" data-lv="1" type="button">中級</button>
+      <button class="btn lv" data-lv="2" type="button">上級</button>
+    </div>
+    <button class="btn" id="modeBtn" type="button" title="クリックで「ひらく」と「はたを立てる」を切りかえ">⛏ ひらく</button>
+    <button class="btn ai" id="aiBtn" type="button">🤖 AIにおまかせ</button>
+    <label class="chk"><input type="checkbox" id="qChk" checked>？マーク</label>
+  </div>
+
+  <div class="panel sunken">
+    <div class="led" title="のこりの地雷"><span id="left">010</span></div>
+    <button id="face" type="button" aria-label="新しいゲーム"></button>
+    <div class="led" title="経過時間（秒）"><span id="time">000</span></div>
+  </div>
+
+  <div class="say" id="say">マスをクリック（タップ）してスタート！</div>
+
+  <div class="boardwrap sunken" id="wrap"><div id="board" role="grid" aria-label="ゲーム盤"></div></div>
+  <div class="best" id="best"></div>
+</div>
+
+<p class="note">これは非公式のファンメイド作品で、Microsoft社とは関係ありません。<br>学習・検証目的で、AI（Claude）が作りました。入力や記録は外部に送信されません。</p>
+
+<canvas id="fx"></canvas>
+<div id="flash"></div>
+<div id="bang">ドカーン!!</div>
+
+<dialog id="help">
+  <div class="titlebar"><span class="tt">あそびかた</span></div>
+  <div class="body">
+    <p style="margin:.2em 0 .5em">地雷をふまずに、地雷のないマスをぜんぶ開けたらクリアです。</p>
+    <ul>
+      <li><b>左クリック（タップ）</b>：マスを開く</li>
+      <li><b>右クリック（長おし）</b>：はたを立てる。<span id="qHelp">もう一度で「？」、さらにもう一度で元にもどる</span></li>
+      <li><b>数字</b>：まわり8マスにある地雷の数</li>
+      <li><b>数字のマスをクリック</b>（または左右同時クリック）：まわりのはたの数が数字と同じなら、残りのマスをまとめて開く</li>
+      <li><b>⛏ ひらく／🚩 はた</b>：スマホ用。タップですることを切りかえ</li>
+      <li><b>顔のボタン</b>（または F2 キー）：新しいゲーム</li>
+      <li><b>🤖 AIにおまかせ</b>：コンピューターが自分で考えて解きます。もう一度おすと止まります（AIを使ったゲームはベストタイムに残りません）</li>
+    </ul>
+  </div>
+  <div class="foot"><button class="btn" id="helpClose" type="button">とじる</button></div>
+</dialog>
+
+<script>
+(() => {
+"use strict";
+const LEVELS = [
+  {name:"初級", w:9,  h:9,  m:10},
+  {name:"中級", w:16, h:16, m:40},
+  {name:"上級", w:30, h:16, m:99},
+];
+const SVG_MINE = '<svg viewBox="0 0 20 20"><g stroke="#000" stroke-width="2"><line x1="10" y1="1" x2="10" y2="19"/><line x1="1" y1="10" x2="19" y2="10"/><line x1="3.6" y1="3.6" x2="16.4" y2="16.4"/><line x1="16.4" y1="3.6" x2="3.6" y2="16.4"/></g><circle cx="10" cy="10" r="6" fill="#000"/><rect x="7" y="7" width="2.5" height="2.5" fill="#fff"/></svg>';
+const SVG_FLAG = '<svg viewBox="0 0 20 20"><polygon points="12,1.5 12,10.5 2.5,6" fill="#f00"/><rect x="10" y="2" width="2" height="12" fill="#000"/><rect x="7" y="14" width="8" height="2" fill="#000"/><rect x="4" y="16" width="14" height="2.5" fill="#000"/></svg>';
+const SVG_X = '<svg viewBox="0 0 20 20">' + SVG_MINE.slice(25,-6) + '<g stroke="#f00" stroke-width="2.4"><line x1="2" y1="2" x2="18" y2="18"/><line x1="18" y1="2" x2="2" y2="18"/></g></svg>';
+const face = (kind) => {
+  const eyes = {
+    ok:'<circle cx="10.5" cy="12" r="1.8"/><circle cx="17.5" cy="12" r="1.8"/>',
+    oh:'<circle cx="10.5" cy="11.5" r="2"/><circle cx="17.5" cy="11.5" r="2"/>',
+    dead:'<g stroke="#000" stroke-width="1.6"><line x1="8.5" y1="10" x2="12.5" y2="14"/><line x1="12.5" y1="10" x2="8.5" y2="14"/><line x1="15.5" y1="10" x2="19.5" y2="14"/><line x1="19.5" y1="10" x2="15.5" y2="14"/></g>',
+    cool:'<path d="M6 10h16v1.5l-2 3h-4l-2-2.5-2 2.5h-4l-2-3z"/>',
+    wink:'<circle cx="10.5" cy="12" r="1.8"/><path d="M15.5 12.5q2-2 4 0" stroke="#000" stroke-width="1.6" fill="none"/>',
+    bot:'<rect x="8.5" y="10" width="4" height="3.5" fill="#2266ff"/><rect x="15.5" y="10" width="4" height="3.5" fill="#2266ff"/>'
+  }[kind];
+  const mouth = {
+    ok:'<path d="M9 17q5 4.5 10 0" stroke="#000" stroke-width="1.8" fill="none"/>',
+    oh:'<ellipse cx="14" cy="18.5" rx="2.4" ry="3"/>',
+    dead:'<path d="M9.5 20q4.5-3.5 9 0" stroke="#000" stroke-width="1.8" fill="none"/>',
+    cool:'<path d="M9 17q5 4.5 10 0" stroke="#000" stroke-width="1.8" fill="none"/>',
+    wink:'<path d="M9 17q5 4.5 10 0" stroke="#000" stroke-width="1.8" fill="none"/>',
+    bot:'<rect x="10" y="17.5" width="8" height="1.8"/>'
+  }[kind];
+  return '<svg viewBox="0 0 28 28"><circle cx="14" cy="14" r="12" fill="#ff0" stroke="#000" stroke-width="1.5"/><g fill="#000">'+eyes+mouth+'</g></svg>';
+};
+
+const $ = (id) => document.getElementById(id);
+const boardEl = $("board"), wrapEl = $("wrap"), sayEl = $("say"), faceEl = $("face");
+const leftEl = $("left"), timeEl = $("time"), bestEl = $("best"), modeBtn = $("modeBtn"), aiBtn = $("aiBtn");
+const qChk = $("qChk"), winEl = $("win");
+const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+// ---------- 状態 ----------
+let lv = 0, W, H, M, N;
+let mine, adj, st;          // st: 0=閉, 1=開, 2=はた, 3=?
+let cells = [];
+let started = false, over = false, opened = 0, flags = 0;
+let t0 = 0, timer = 0, secs = 0;
+let flagMode = false, aiUsed = false;
+let transposed = false;
+
+// ---------- 保存（端末の中だけ） ----------
+const store = {
+  get(k, d){ try { const v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); } catch(e){ return d; } },
+  set(k, v){ try { localStorage.setItem(k, JSON.stringify(v)); } catch(e){} }
+};
+let best = store.get("tameso-mine-best", [null,null,null]);
+lv = store.get("tameso-mine-level", 0); if (!(lv >= 0 && lv <= 2)) lv = 0;
+qChk.checked = store.get("tameso-mine-q", true);
+
+// ---------- 盤 ----------
+const nb = (i) => {
+  const x = i % W, y = (i / W) | 0, r = [];
+  for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+    if (!dx && !dy) continue;
+    const nx = x + dx, ny = y + dy;
+    if (nx >= 0 && nx < W && ny >= 0 && ny < H) r.push(ny * W + nx);
+  }
+  return r;
+};
+let NB = [];
+
+function newGame(){
+  stopAI();
+  const L = LEVELS[lv]; W = L.w; H = L.h; M = L.m; N = W * H;
+  mine = new Uint8Array(N); adj = new Uint8Array(N); st = new Uint8Array(N);
+  NB = []; for (let i = 0; i < N; i++) NB.push(nb(i));
+  started = false; over = false; opened = 0; flags = 0; aiUsed = false;
+  clearInterval(timer); secs = 0;
+  document.querySelectorAll(".lv").forEach(b => b.classList.toggle("on", +b.dataset.lv === lv));
+  layout(true);
+  setFace("ok"); updLeft(); updTime(); updBest();
+  say("マスをクリック（タップ）してスタート！");
+}
+
+function layout(rebuild){
+  const narrow = window.innerWidth < 640 && window.innerHeight > window.innerWidth;
+  const tr = narrow && W > H;
+  const cols = tr ? H : W;
+  const avail = Math.min(window.innerWidth - 56, 960);
+  let size = Math.floor(avail / cols);
+  size = Math.max(18, Math.min(32, size));
+  document.documentElement.style.setProperty("--cell", size + "px");
+  if (!rebuild && tr === transposed && cells.length === N) return;
+  transposed = tr;
+  boardEl.style.gridTemplateColumns = `repeat(${cols}, var(--cell))`;
+  boardEl.textContent = "";
+  cells = new Array(N);
+  const rows = tr ? W : H;
+  const frag = document.createDocumentFragment();
+  for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+    const i = tr ? (c * W + r) : (r * W + c);
+    const d = document.createElement("div");
+    d.className = "c"; d.dataset.i = i; d.setAttribute("role", "gridcell");
+    cells[i] = d; frag.appendChild(d);
+  }
+  boardEl.appendChild(frag);
+  for (let i = 0; i < N; i++) draw(i);
+}
+
+function draw(i){
+  const d = cells[i]; if (!d) return;
+  const s = st[i];
+  let cls = "c", html = "";
+  if (s === 1){
+    if (mine[i]) { cls += " o"; html = SVG_MINE; }
+    else { cls += " o"; if (adj[i]) { cls += " n" + adj[i]; html = adj[i]; } }
+  } else if (s === 2){
+    if (over && !mine[i]) { cls += " o"; html = SVG_X; } else html = SVG_FLAG;
+  } else if (s === 3){ cls += " q"; }
+  else if (over && mine[i]) { cls += " o"; html = SVG_MINE; }
+  if (d._boom) cls += " boom";
+  if (d._aif) cls += " aif";
+  if (d._pr && s !== 1 && s !== 2) cls += " pr";
+  d.className = cls;
+  if (d._h !== html){ d.innerHTML = html; d._h = html; }
+  let label = "閉じたマス";
+  if (s === 1) label = mine[i] ? "地雷" : (adj[i] ? "数字" + adj[i] : "空き");
+  else if (s === 2) label = "はた"; else if (s === 3) label = "はてな";
+  d.setAttribute("aria-label", label);
+}
+
+function placeMines(safe){
+  const ban = new Set([safe, ...NB[safe]]);
+  if (N - ban.size < M) { ban.clear(); ban.add(safe); }
+  const pool = [];
+  for (let i = 0; i < N; i++) if (!ban.has(i)) pool.push(i);
+  for (let k = 0; k < M; k++){
+    const j = k + Math.floor(Math.random() * (pool.length - k));
+    [pool[k], pool[j]] = [pool[j], pool[k]];
+    mine[pool[k]] = 1;
+  }
+  for (let i = 0; i < N; i++){ let n = 0; for (const j of NB[i]) n += mine[j]; adj[i] = n; }
+}
+
+function start(i){
+  placeMines(i); started = true;
+  t0 = performance.now(); secs = 0; updTime();
+  clearInterval(timer);
+  timer = setInterval(() => { secs = Math.min(999, Math.floor((performance.now() - t0) / 1000) + 1); updTime(); }, 250);
+  secs = 1; updTime();
+}
+
+function reveal(i){
+  if (over || st[i] === 1 || st[i] === 2) return false;
+  if (!started) start(i);
+  if (mine[i]) { st[i] = 1; lose(i); return true; }
+  const q = [i]; st[i] = 1; opened++; draw(i);
+  while (q.length){
+    const k = q.pop();
+    if (adj[k] === 0) for (const j of NB[k]) {
+      if (st[j] === 0 || st[j] === 3){ st[j] = 1; opened++; draw(j); q.push(j); }
+    }
+  }
+  if (opened === N - M) win();
+  return true;
+}
+
+function chord(i){
+  if (over || st[i] !== 1 || !adj[i]) return false;
+  let f = 0; for (const j of NB[i]) if (st[j] === 2) f++;
+  if (f !== adj[i]) return false;
+  let any = false;
+  for (const j of NB[i]) if (st[j] === 0 || st[j] === 3) { reveal(j); any = true; if (over) break; }
+  return any;
+}
+
+function cycleFlag(i){
+  if (over || st[i] === 1) return;
+  if (st[i] === 0){ st[i] = 2; flags++; }
+  else if (st[i] === 2){ flags--; st[i] = qChk.checked ? 3 : 0; }
+  else st[i] = 0;
+  draw(i); updLeft();
+}
+
+function primary(i){
+  if (over) return;
+  if (st[i] === 1) { chord(i); return; }
+  if (flagMode) cycleFlag(i); else reveal(i);
+}
+function secondary(i){
+  if (over) return;
+  if (st[i] === 1) { chord(i); return; }
+  if (flagMode) reveal(i); else cycleFlag(i);
+}
+
+// ---------- 表示 ----------
+const pad3 = (n) => n < 0 ? "-" + String(Math.min(99, -n)).padStart(2, "0") : String(Math.min(999, n)).padStart(3, "0");
+function updLeft(){ leftEl.textContent = pad3(M - flags); }
+function updTime(){ timeEl.textContent = pad3(secs); }
+function setFace(k){ faceEl.innerHTML = face(k); faceEl.dataset.k = k; }
+function say(text, cls){ sayEl.textContent = text; sayEl.className = "say" + (cls ? " " + cls : ""); }
+function updBest(){
+  bestEl.textContent = "ベストタイム　" + LEVELS.map((L, k) => L.name + "：" + (best[k] == null ? "—" : best[k] + "秒")).join("　");
+}
+
+// ---------- 勝ち・負け ----------
+function win(){
+  over = true; clearInterval(timer);
+  for (let i = 0; i < N; i++) if (mine[i] && st[i] !== 2){ if (st[i] !== 2) flags++; st[i] = 2; }
+  flags = M; updLeft();
+  for (let i = 0; i < N; i++) draw(i);
+  setFace("cool");
+  if (aiRunning || aiUsed){
+    stopAI(true);
+    say("🤖 AI：クリアできた！（AIを使ったので、ベストタイムには残りません）", "win");
+  } else {
+    let msg = "クリア！ " + secs + "秒";
+    if (best[lv] == null || secs < best[lv]) { best[lv] = secs; store.set("tameso-mine-best", best); msg += "　🎉 新記録！"; }
+    say(msg, "win"); updBest();
+  }
+  confetti();
+}
+
+function lose(i){
+  over = true; clearInterval(timer);
+  cells[i]._boom = true;
+  for (let k = 0; k < N; k++) draw(k);
+  setFace("dead");
+  const wasAI = aiRunning; stopAI(true);
+  say(wasAI ? "🤖 AI：……ごめん、ふんじゃった。" : "ドカーン！ ゲームオーバー。顔のボタンでもう一回！", "boom");
+  explode(i);
+}
+
+// ---------- ド派手な演出 ----------
+const fx = $("fx"), ctx = fx.getContext("2d");
+let parts = [], rings = [], fxRun = false;
+function sizeFx(){ const r = devicePixelRatio || 1; fx.width = innerWidth * r; fx.height = innerHeight * r; ctx.setTransform(r,0,0,r,0,0); }
+function centerOf(i){ const b = cells[i].getBoundingClientRect(); return [b.left + b.width / 2, b.top + b.height / 2]; }
+function burst(x, y, n, power, palette){
+  for (let k = 0; k < n; k++){
+    const a = Math.random() * Math.PI * 2, v = (Math.random() * .8 + .2) * power;
+    parts.push({x, y, vx:Math.cos(a)*v, vy:Math.sin(a)*v - power*.3, life:1, decay:.008 + Math.random()*.02,
+      r:2 + Math.random()*5, c:palette[(Math.random()*palette.length)|0], sq:Math.random() < .35, rot:Math.random()*6});
+  }
+  if (!fxRun){ fxRun = true; requestAnimationFrame(tick); }
+}
+function tick(){
+  ctx.clearRect(0, 0, innerWidth, innerHeight);
+  for (const r of rings){
+    r.r += r.v; r.life -= .03;
+    ctx.globalAlpha = Math.max(0, r.life); ctx.strokeStyle = r.c; ctx.lineWidth = 6 * r.life + 1;
+    ctx.beginPath(); ctx.arc(r.x, r.y, r.r, 0, Math.PI * 2); ctx.stroke();
+  }
+  rings = rings.filter(r => r.life > 0);
+  for (const p of parts){
+    p.x += p.vx; p.y += p.vy; p.vy += .18; p.vx *= .99; p.life -= p.decay; p.rot += .2;
+    ctx.globalAlpha = Math.max(0, p.life); ctx.fillStyle = p.c;
+    if (p.sq){ ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.rot); ctx.fillRect(-p.r, -p.r/2, p.r*2, p.r); ctx.restore(); }
+    else { ctx.beginPath(); ctx.arc(p.x, p.y, p.r * (.4 + p.life * .6), 0, Math.PI*2); ctx.fill(); }
+  }
+  ctx.globalAlpha = 1;
+  parts = parts.filter(p => p.life > 0 && p.y < innerHeight + 40);
+  if (parts.length || rings.length) requestAnimationFrame(tick); else { fxRun = false; ctx.clearRect(0,0,innerWidth,innerHeight); }
+}
+const FIRE = ["#fff6a0","#ffd000","#ff8a00","#ff3b00","#c00000","#555","#222"];
+function explode(i){
+  sizeFx();
+  const [x, y] = centerOf(i);
+  const big = reduce ? 40 : 220;
+  burst(x, y, big, reduce ? 6 : 13, FIRE);
+  if (!reduce){
+    rings.push({x, y, r:5, v:14, life:1, c:"#fff"}, {x, y, r:5, v:9, life:1, c:"#ff8a00"});
+    const fl = $("flash"); fl.classList.remove("go"); void fl.offsetWidth; fl.classList.add("go");
+    winEl.classList.remove("shake"); void winEl.offsetWidth; winEl.classList.add("shake");
+    const bg = $("bang"); bg.classList.remove("go"); void bg.offsetWidth; bg.classList.add("go");
+    if (navigator.vibrate) try { navigator.vibrate([80, 40, 160]); } catch(e){}
+  }
+  // ほかの地雷が、近い順に連鎖して爆発
+  const ix = i % W, iy = (i / W) | 0;
+  const others = [];
+  for (let k = 0; k < N; k++) if (mine[k] && k !== i) others.push(k);
+  others.sort((a, b) => Math.hypot(a % W - ix, ((a / W) | 0) - iy) - Math.hypot(b % W - ix, ((b / W) | 0) - iy));
+  const step = Math.max(18, Math.min(90, 1500 / Math.max(1, others.length)));
+  const seq = gameId;
+  others.forEach((k, n) => setTimeout(() => {
+    if (seq !== gameId) return;
+    const d = cells[k]; if (!d) return;
+    d.classList.remove("pop"); void d.offsetWidth; d.classList.add("pop");
+    if (!reduce && n < 60){ const [cx, cy] = centerOf(k); burst(cx, cy, 14, 5, FIRE); }
+  }, 250 + n * step));
+}
+function confetti(){
+  sizeFx();
+  const P = ["#ff3b3b","#ffd000","#22c55e","#3b82f6","#a855f7","#fff"];
+  const n = reduce ? 30 : 160;
+  for (let k = 0; k < n; k++) parts.push({x:Math.random()*innerWidth, y:-20 - Math.random()*200, vx:(Math.random()-.5)*3, vy:Math.random()*2+1,
+    life:1, decay:.004 + Math.random()*.004, r:3 + Math.random()*4, c:P[(Math.random()*P.length)|0], sq:true, rot:Math.random()*6});
+  if (!fxRun){ fxRun = true; requestAnimationFrame(tick); }
+}
+
+// ---------- 操作（マウス） ----------
+let lastTouch = -1e9, lHeld = false, rHeld = false, chording = false, ignoreUp = false, pressSet = [];
+const cellAt = (x, y) => { const e = document.elementFromPoint(x, y); return e && e.classList && e.classList.contains("c") && boardEl.contains(e) ? +e.dataset.i : -1; };
+function setPress(list){
+  for (const k of pressSet){ cells[k]._pr = false; draw(k); }
+  pressSet = list.filter(k => st[k] === 0 || st[k] === 3);
+  for (const k of pressSet){ cells[k]._pr = true; draw(k); }
+}
+function pressFor(i){
+  if (i < 0 || over) return [];
+  if (chording || st[i] === 1) return [i, ...NB[i]];
+  if (flagMode) return [];
+  return [i];
+}
+boardEl.addEventListener("contextmenu", e => e.preventDefault());
+boardEl.addEventListener("mousedown", e => {
+  if (performance.now() - lastTouch < 800) return;
+  const i = cellAt(e.clientX, e.clientY); if (i < 0) return;
+  e.preventDefault();
+  if (aiRunning) { stopAI(); say("AIを止めました。"); }
+  lHeld = !!(e.buttons & 1); rHeld = !!(e.buttons & 2);
+  if (e.button === 1 || (lHeld && rHeld)) chording = true;
+  else if (e.button === 2) { secondary(i); ignoreUp = true; }
+  if (!over && (lHeld || chording)) setFace("oh");
+  setPress(lHeld || chording ? pressFor(i) : []);
+});
+boardEl.addEventListener("mousemove", e => {
+  if (!(e.buttons & 1) && !chording) return;
+  setPress(pressFor(cellAt(e.clientX, e.clientY)));
+});
+document.addEventListener("mouseup", e => {
+  if (performance.now() - lastTouch < 800) return;
+  const i = cellAt(e.clientX, e.clientY);
+  if (chording){ if (i >= 0) chord(i); chording = false; ignoreUp = true; }
+  else if (e.button === 0 && !ignoreUp && lHeld && i >= 0) primary(i);
+  lHeld = !!(e.buttons & 1); rHeld = !!(e.buttons & 2);
+  if (!e.buttons){ ignoreUp = false; setPress([]); if (!over && !aiRunning) setFace("ok"); }
+});
+
+// ---------- 操作（タッチ・ペン） ----------
+let tp = null;
+boardEl.addEventListener("pointerdown", e => {
+  if (e.pointerType === "mouse") return;
+  lastTouch = performance.now();
+  const i = cellAt(e.clientX, e.clientY); if (i < 0) return;
+  if (aiRunning) { stopAI(); say("AIを止めました。"); }
+  tp = {i, x:e.clientX, y:e.clientY, long:false, id:e.pointerId};
+  setPress(pressFor(i)); if (!over) setFace("oh");
+  tp.t = setTimeout(() => {
+    if (!tp) return; tp.long = true; setPress([]);
+    secondary(tp.i);
+    if (navigator.vibrate) try { navigator.vibrate(25); } catch(e){}
+  }, 420);
+});
+boardEl.addEventListener("pointermove", e => {
+  if (!tp || e.pointerId !== tp.id) return;
+  if (Math.hypot(e.clientX - tp.x, e.clientY - tp.y) > 10){ clearTimeout(tp.t); tp = null; setPress([]); if (!over) setFace("ok"); }
+});
+const endTouch = (e, cancel) => {
+  if (!tp || e.pointerId !== tp.id) return;
+  lastTouch = performance.now();
+  clearTimeout(tp.t);
+  if (!cancel && !tp.long) primary(tp.i);
+  tp = null; setPress([]); if (!over && !aiRunning) setFace("ok");
+};
+boardEl.addEventListener("pointerup", e => endTouch(e, false));
+boardEl.addEventListener("pointercancel", e => endTouch(e, true));
+
+// ---------- ボタン ----------
+let gameId = 0;
+faceEl.addEventListener("click", () => { gameId++; newGame(); });
+document.querySelectorAll(".lv").forEach(b => b.addEventListener("click", () => {
+  lv = +b.dataset.lv; store.set("tameso-mine-level", lv); gameId++; newGame();
+}));
+modeBtn.addEventListener("click", () => {
+  flagMode = !flagMode;
+  modeBtn.textContent = flagMode ? "🚩 はた" : "⛏ ひらく";
+  modeBtn.classList.toggle("on", flagMode);
+});
+qChk.addEventListener("change", () => {
+  store.set("tameso-mine-q", qChk.checked);
+  if (!qChk.checked) for (let i = 0; i < N; i++) if (st[i] === 3){ st[i] = 0; draw(i); }
+});
+const helpDlg = $("help");
+$("helpBtn").addEventListener("click", () => { if (helpDlg.showModal) helpDlg.showModal(); else helpDlg.setAttribute("open", ""); });
+$("helpClose").addEventListener("click", () => { if (helpDlg.close) helpDlg.close(); else helpDlg.removeAttribute("open"); });
+
+let kb = "", hk = false;
+document.addEventListener("keydown", e => {
+  if (e.key === "F2"){ e.preventDefault(); gameId++; newGame(); return; }
+  if (e.key === "Enter" && e.shiftKey && kb.endsWith("xyzzy")){ hk = !hk; kb = ""; if (!hk) $("px").style.background = "transparent"; return; }
+  if (e.key && e.key.length === 1) kb = (kb + e.key.toLowerCase()).slice(-8);
+});
+boardEl.addEventListener("mouseover", e => {
+  if (!hk || !mine || !started) return;
+  const t = e.target.closest && e.target.closest(".c"); if (!t) return;
+  $("px").style.background = mine[+t.dataset.i] ? "#000" : "#fff";
+});
+
+let rz = 0;
+addEventListener("resize", () => { clearTimeout(rz); rz = setTimeout(() => { layout(false); if (fxRun) sizeFx(); }, 120); });
+
+// ---------- AIにおまかせ ----------
+let aiRunning = false, aiTimer = 0, aiQueue = [], aiFocus = -1;
+const AI_STEP = 230, AI_THINK = 900;
+function setFocus(i){
+  if (aiFocus >= 0 && cells[aiFocus]){ cells[aiFocus]._aif = false; draw(aiFocus); }
+  aiFocus = i;
+  if (i >= 0 && cells[i]){ cells[i]._aif = true; draw(i); cells[i].scrollIntoView({block:"nearest", inline:"nearest"}); }
+}
+function startAI(){
+  if (over){ gameId++; newGame(); }
+  aiRunning = true; aiUsed = true; aiQueue = [];
+  aiBtn.textContent = "⏹ とめる"; aiBtn.classList.add("running");
+  setFace("bot");
+  say("🤖 AI：まかせて！ 考えながら進めるね。", "ai");
+  aiTimer = setTimeout(aiStep, 600);
+}
+function stopAI(keepMsg){
+  clearTimeout(aiTimer);
+  if (aiFocus >= 0) setFocus(-1);
+  if (!aiRunning) return;
+  aiRunning = false; aiQueue = [];
+  aiBtn.textContent = "🤖 AIにおまかせ"; aiBtn.classList.remove("running");
+  if (!over) setFace("ok");
+}
+aiBtn.addEventListener("click", () => {
+  if (aiRunning){ stopAI(); say("AIを止めました。続きは自分でどうぞ！"); }
+  else startAI();
+});
+
+const hidden = (i) => st[i] === 0 || st[i] === 3;
+function constraints(){
+  const cs = [];
+  for (let i = 0; i < N; i++){
+    if (st[i] !== 1 || !adj[i]) continue;
+    const hs = []; let f = 0;
+    for (const j of NB[i]){ if (st[j] === 2) f++; else if (hidden(j)) hs.push(j); }
+    if (hs.length) cs.push({src:i, cells:hs, need:adj[i] - f});
+  }
+  return cs;
+}
+function deduce(cs){
+  const safe = new Set(), mines = new Set();
+  for (const c of cs){
+    if (c.need === 0) c.cells.forEach(k => safe.add(k));
+    else if (c.need === c.cells.length) c.cells.forEach(k => mines.add(k));
+  }
+  if (safe.size || mines.size) return {safe, mines, how:"easy"};
+  // 2つの数字を組み合わせて考える
+  const sets = cs.map(c => ({s:new Set(c.cells), need:c.need, cells:c.cells}));
+  for (let a = 0; a < sets.length; a++) for (let b = 0; b < sets.length; b++){
+    if (a === b) continue;
+    const A = sets[a], B = sets[b];
+    if (A.cells.length >= B.cells.length) continue;
+    if (!A.cells.every(k => B.s.has(k))) continue;
+    const rest = B.cells.filter(k => !A.s.has(k)), r = B.need - A.need;
+    if (r === 0) rest.forEach(k => safe.add(k));
+    else if (r === rest.length) rest.forEach(k => mines.add(k));
+    if (safe.size || mines.size) return {safe, mines, how:"pair"};
+  }
+  return null;
+}
+function lnC(n, k){
+  if (k < 0 || k > n) return -Infinity;
+  let s = 0; for (let t = 1; t <= k; t++) s += Math.log(n - k + t) - Math.log(t);
+  return s;
+}
+function probabilities(cs){
+  // 境目のマスを、つながりごとにすべての置き方を数えて、地雷の確率を出す
+  const fr = new Map(); cs.forEach(c => c.cells.forEach(k => fr.set(k, fr.size + 0 * fr.size)));
+  const frontier = [...fr.keys()];
+  const idx = new Map(frontier.map((k, n) => [k, n]));
+  const parent = frontier.map((_, n) => n);
+  const find = (x) => parent[x] === x ? x : (parent[x] = find(parent[x]));
+  for (const c of cs) for (let n = 1; n < c.cells.length; n++) parent[find(idx.get(c.cells[n]))] = find(idx.get(c.cells[0]));
+  const groups = new Map();
+  frontier.forEach((k, n) => { const r = find(n); if (!groups.has(r)) groups.set(r, []); groups.get(r).push(k); });
+  let unknown = 0; for (let i = 0; i < N; i++) if (hidden(i) && !idx.has(i)) unknown++;
+  const R = M - flags;
+  const comps = [];
+  let exhausted = false;
+  for (const g of groups.values()){
+    const gs = new Set(g);
+    const gc = cs.filter(c => gs.has(c.cells[0]));
+    g.sort((a, b) => a - b);
+    const pos = new Map(g.map((k, n) => [k, n]));
+    const cc = gc.map(c => ({cells:c.cells.map(k => pos.get(k)), need:c.need}));
+    const byCell = g.map(() => []);
+    cc.forEach((c, n) => c.cells.forEach(p => byCell[p].push(n)));
+    const assign = new Int8Array(g.length).fill(-1);
+    const cnt = {}; // k -> {w, per:Float64Array}
+    let nodes = 0;
+    const ok = (ci) => {
+      const c = cc[ci]; let m = 0, u = 0;
+      for (const p of c.cells){ if (assign[p] === 1) m++; else if (assign[p] === -1) u++; }
+      return m <= c.need && m + u >= c.need;
+    };
+    const rec = (p, m) => {
+      if (++nodes > 400000) { exhausted = true; return; }
+      if (exhausted) return;
+      if (p === g.length){
+        const e = cnt[m] || (cnt[m] = {w:0, per:new Float64Array(g.length)});
+        e.w++; for (let q = 0; q < g.length; q++) if (assign[q] === 1) e.per[q]++;
+        return;
+      }
+      for (const v of [0, 1]){
+        assign[p] = v;
+        if (byCell[p].every(ok)) rec(p + 1, m + v);
+        if (exhausted) return;
+      }
+      assign[p] = -1;
+    };
+    rec(0, 0);
+    comps.push({g, cnt});
+  }
+  if (exhausted) return null;
+  // 各つながりの地雷数の組み合わせを、のこりのマスの置き方で重み付け
+  const dist = (skip) => {
+    let d = new Map([[0, 0]]); // 地雷数 -> log重み
+    comps.forEach((c, n) => {
+      if (n === skip) return;
+      const nd = new Map();
+      for (const [t, lw] of d) for (const k in c.cnt){
+        const key = t + +k, v = lw + Math.log(c.cnt[k].w);
+        nd.set(key, nd.has(key) ? logAdd(nd.get(key), v) : v);
+      }
+      d = nd;
+    });
+    return d;
+  };
+  const prob = new Map();
+  let total = -Infinity, restMines = -Infinity;
+  const all = dist(-1);
+  for (const [t, lw] of all){
+    const w = lw + lnC(unknown, R - t);
+    total = logAdd(total, w);
+    if (unknown > 0) restMines = logAdd(restMines, w + Math.log(Math.max(1e-300, (R - t) / unknown)));
+  }
+  if (!isFinite(total)) return null;
+  comps.forEach((c, n) => {
+    const others = dist(n);
+    c.g.forEach((cell, q) => {
+      let s = -Infinity;
+      for (const k in c.cnt){
+        const e = c.cnt[k]; if (!e.per[q]) continue;
+        for (const [t, lw] of others) s = logAdd(s, Math.log(e.per[q]) + lw + lnC(unknown, R - +k - t));
+      }
+      prob.set(cell, isFinite(s) ? Math.exp(s - total) : 0);
+    });
+  });
+  const pRest = unknown > 0 ? Math.exp(restMines - total) : 1;
+  return {prob, pRest};
+}
+function logAdd(a, b){ if (a === -Infinity) return b; if (b === -Infinity) return a; const m = Math.max(a, b); return m + Math.log(Math.exp(a - m) + Math.exp(b - m)); }
+
+function pickGuess(cs){
+  const P = probabilities(cs);
+  let bestCell = -1, bestP = 2;
+  const isCorner = (i) => { const x = i % W, y = (i / W) | 0; return (x === 0 || x === W - 1) && (y === 0 || y === H - 1); };
+  const isEdge = (i) => { const x = i % W, y = (i / W) | 0; return x === 0 || x === W - 1 || y === 0 || y === H - 1; };
+  if (P){
+    const sure = [], mines = [];
+    for (const [k, p] of P.prob){ if (p < 1e-9) sure.push(k); else if (p > 1 - 1e-9) mines.push(k); }
+    if (sure.length || mines.length) return {sure, mines};
+    for (const [k, p] of P.prob) if (p < bestP - 1e-9){ bestP = p; bestCell = k; }
+    // 境目から離れたマスのほうが安全なら、そちら（角を優先）
+    if (P.pRest < bestP - 1e-9){
+      const cand = []; for (let i = 0; i < N; i++) if (hidden(i) && !P.prob.has(i)) cand.push(i);
+      cand.sort((a, b) => (isCorner(b) - isCorner(a)) || (isEdge(b) - isEdge(a)) || (Math.random() - .5));
+      if (cand.length){ bestCell = cand[0]; bestP = P.pRest; }
+    }
+  } else {
+    // 数えきれないときは、ざっくり見積もる
+    const est = new Map();
+    for (const c of cs){ const p = c.need / c.cells.length; for (const k of c.cells) est.set(k, Math.max(est.get(k) || 0, p)); }
+    let hid = 0; for (let i = 0; i < N; i++) if (hidden(i)) hid++;
+    const pRest = (M - flags) / Math.max(1, hid);
+    for (const [k, p] of est) if (p < bestP){ bestP = p; bestCell = k; }
+    if (pRest < bestP){ for (let i = 0; i < N; i++) if (hidden(i) && !est.has(i)){ bestCell = i; bestP = pRest; break; } }
+  }
+  return {guess:bestCell, p:bestP};
+}
+
+function aiStep(){
+  if (!aiRunning || over) { stopAI(true); return; }
+  // 1手目
+  if (!started){
+    const c = ((H / 2) | 0) * W + ((W / 2) | 0);
+    setFocus(c); say("🤖 AI：まずはまん中から開けてみる！", "ai");
+    aiTimer = setTimeout(() => { if (!aiRunning) return; setFocus(-1); reveal(c); next(AI_THINK); }, 450);
+    return;
+  }
+  // やることが決まっていれば、1手ずつ実行
+  while (aiQueue.length){
+    const a = aiQueue.shift();
+    if (a.flag ? st[a.i] !== 0 && st[a.i] !== 3 : !hidden(a.i)) continue;
+    setFocus(a.i);
+    if (a.msg) say(a.msg, "ai");
+    aiTimer = setTimeout(() => {
+      if (!aiRunning) return;
+      setFocus(-1);
+      if (a.flag){ if (st[a.i] === 3){ st[a.i] = 0; } if (st[a.i] === 0){ st[a.i] = 2; flags++; draw(a.i); updLeft(); } }
+      else reveal(a.i);
+      next(a.wait || AI_STEP);
+    }, a.hold || 140);
+    return;
+  }
+  const cs = constraints();
+  const d = deduce(cs);
+  if (d){
+    const msgS = d.how === "pair" ? "🤖 AI：となりの数字と組み合わせると…ここは安全！" : "🤖 AI：ここは安全！";
+    const msgM = d.how === "pair" ? "🤖 AI：となりの数字と組み合わせると…ここは地雷。はたを立てるね" : "🤖 AI：ここは地雷だね。はたを立てるよ";
+    [...d.mines].forEach((i, n) => aiQueue.push({i, flag:true, msg: n === 0 ? msgM : null}));
+    [...d.safe].forEach((i, n) => aiQueue.push({i, flag:false, msg: n === 0 ? msgS : null}));
+    next(0); return;
+  }
+  const g = pickGuess(cs);
+  if (g.sure){
+    g.mines.forEach((i, n) => aiQueue.push({i, flag:true, msg: n === 0 ? "🤖 AI：ぜんぶの置き方を計算したら…ここは絶対に地雷！" : null}));
+    g.sure.forEach((i, n) => aiQueue.push({i, flag:false, msg: n === 0 ? "🤖 AI：ぜんぶの置き方を計算したら…ここは絶対に安全！" : null, hold:500}));
+    next(0); return;
+  }
+  if (g.guess < 0){ stopAI(); say("🤖 AI：あれ、開けるマスが見つからない…"); return; }
+  const pct = Math.round(g.p * 100);
+  const line = pct >= 40 ? "🤖 AI：うーん、これは完全に運だめし…（地雷の確率 " + pct + "%）えいっ！"
+            : "🤖 AI：確実なマスがない…いちばん安全そうなここに賭ける！（地雷の確率 " + pct + "%）";
+  aiQueue.push({i:g.guess, flag:false, msg:line, hold:AI_THINK + 300, wait:AI_THINK});
+  next(0);
+}
+function next(ms){ if (aiRunning && !over) aiTimer = setTimeout(aiStep, ms); }
+
+// ---------- テスト用の入口（画面には出ない） ----------
+window.__mine = {
+  get state(){ return {W, H, M, started, over, opened, flags, secs, lv, aiRunning, transposed, best:best.slice()}; },
+  mines(){ return [...mine].map((v, i) => v ? i : -1).filter(i => i >= 0); },
+  st(){ return [...st]; },
+  adj(){ return [...adj]; },
+  cellEl(i){ return cells[i]; },
+  setMines(list, first){ // 盤面を固定する（テスト用）
+    gameId++; newGame(); mine.fill(0); list.forEach(i => mine[i] = 1); M = list.length; updLeft();
+    for (let i = 0; i < N; i++){ let n = 0; for (const j of NB[i]) n += mine[j]; adj[i] = n; }
+    started = true; t0 = performance.now(); clearInterval(timer);
+    timer = setInterval(() => { secs = Math.min(999, Math.floor((performance.now() - t0) / 1000) + 1); updTime(); }, 250);
+  }
+};
+
+newGame();
+})();
+</script>
+</body>
+</html>
